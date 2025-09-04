@@ -15,7 +15,7 @@ load_dotenv()
 app = FastAPI()
 API_KEY = os.getenv("API_KEY") #the key was changed from the previously hard-coded value
 
-@app.post("/esp32-api/upload")
+@app.post("/upload")
 async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...)):
     if (x_api_key != API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API key.")    
