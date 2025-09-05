@@ -1,12 +1,15 @@
 from fastapi import FastAPI, File, UploadFile,HTTPException
 from fastapi.params import Header
-from fastapi.responses import FileResponse, JSONResponse
-from typing import List
+from fastapi.responses import FileResponse, JSONResponse,PlainTextResponse
+import httpx
+from pydantic import BaseModel
 from dotenv import load_dotenv
+
 import shutil
 import os
 import time
 from pathlib import Path
+
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -14,6 +17,12 @@ load_dotenv()
 
 app = FastAPI()
 API_KEY = os.getenv("API_KEY") #the key was changed from the previously hard-coded value
+NOTIFICATION_TOKEN = os.getenv("NOTIFICATION_TOKEN")
+NOTIFICATION_URL = os.getenv("NOTIFICATION_URL")
+
+class MessageSchema(BaseModel):
+    message : str
+    topic : str    
 
 @app.get("/list")
 async def list_images(x_api_key:str = Header(...)):
@@ -25,12 +34,27 @@ async def list_images(x_api_key:str = Header(...)):
 @app.get("/get-file/{filename}")
 async def get_file(filename: str, x_api_key:str = Header(...)):
     if (x_api_key != API_KEY):
-        raise HTTPException(status_code=401, detail="Invalid API key.")
+        raise HTTPException(status_code=401, detail="Invalid API key.")    
     file_path = os.path.join(UPLOAD_DIR, filename)
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
 
+@app.post("/notification")
+async def post_notification(message:MessageSchema, x_api_key:str = Header(...)):
+    #curl   -H "Authorization: Bearer tk_3wow5z8vkbxj0q6obkqfhlvvhwx6c" -H "Tags:loudspeaker" \
+    #        -d "YOUR MESSAGE HERE" \
+    #        https://notifications.notlocalhost.dev/flash-channel-xtp
+    if (x_api_key != API_KEY):
+        raise HTTPException(status_code=401, detail="Invalid API key.")    
+    url = NOTIFICATION_URL
+    async with httpx.AsyncClient() as client:
+        client.headers = {
+            "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
+            "Tags": "loudspeaker"
+        }
+        _ = await client.post(url+message.topic, data=message.message)        
+    return  PlainTextResponse(status_code=200)  
 
 @app.post("/upload")
 async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...)):
