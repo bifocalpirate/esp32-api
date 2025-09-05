@@ -16,9 +16,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 load_dotenv()
 
 app = FastAPI()
-API_KEY = os.getenv("API_KEY") 
-NOTIFICATION_TOKEN = os.getenv("NOTIFICATION_TOKEN")
-NOTIFICATION_URL = os.getenv("NOTIFICATION_URL")
+API_KEY = os.getenv("API_KEY") #when more cameras are added use the mac address of the camera and a lookup db
+NOTIFICATION_TOKEN = os.getenv("NOTIFICATION_TOKEN") #token for the ntfy service
+NOTIFICATION_URL = os.getenv("NOTIFICATION_URL") #base url for the ntfy service
 
 class MessageSchema(BaseModel):
     message : str
@@ -50,7 +50,7 @@ async def post_notification(message:MessageSchema, x_api_key:str = Header(...)):
             "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
             "Tags": "loudspeaker"
         }
-        _ = await client.post(url+message.topic, data=message.message)        
+        _ = await client.post(url+message.topic, data=message.message) #to the self-hosted ntfy server
     return  PlainTextResponse(status_code=200)  
 
 @app.post("/upload")
@@ -66,5 +66,5 @@ async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...))
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    return JSONResponse(content={"filename": file.filename, "status": "uploaded"}, status_code=201)
+    return PlainTextResponse(status_code=201) 
 
