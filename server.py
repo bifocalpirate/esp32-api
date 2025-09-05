@@ -15,6 +15,23 @@ load_dotenv()
 app = FastAPI()
 API_KEY = os.getenv("API_KEY") #the key was changed from the previously hard-coded value
 
+@app.get("/list")
+async def list_images(x_api_key:str = Header(...)):
+    if (x_api_key != API_KEY):
+        raise HTTPException(status_code=401, detail="Invalid API key.")
+    files = os.listdir(UPLOAD_DIR)
+    return JSONResponse(content={"files": files}, status_code=200)
+
+@app.get("/get-file/{filename}")
+async def get_file(filename: str, x_api_key:str = Header(...)):
+    if (x_api_key != API_KEY):
+        raise HTTPException(status_code=401, detail="Invalid API key.")
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File not found.")
+    return JSONResponse(content={"filename": filename, "status": "available"}, status_code=200)
+
+
 @app.post("/upload")
 async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...)):
     if (x_api_key != API_KEY):
