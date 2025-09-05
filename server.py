@@ -1,6 +1,6 @@
 from fastapi import FastAPI, File, UploadFile,HTTPException
 from fastapi.params import Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from typing import List
 from dotenv import load_dotenv
 import shutil
@@ -29,7 +29,7 @@ async def get_file(filename: str, x_api_key:str = Header(...)):
     file_path = os.path.join(UPLOAD_DIR, filename)
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
-    return JSONResponse(content={"filename": filename, "status": "available"}, status_code=200)
+    return FileResponse(file_path)
 
 
 @app.post("/upload")
