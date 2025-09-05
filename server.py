@@ -16,7 +16,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 load_dotenv()
 
 app = FastAPI()
-API_KEY = os.getenv("API_KEY") #the key was changed from the previously hard-coded value
+API_KEY = os.getenv("API_KEY") 
 NOTIFICATION_TOKEN = os.getenv("NOTIFICATION_TOKEN")
 NOTIFICATION_URL = os.getenv("NOTIFICATION_URL")
 
@@ -41,10 +41,7 @@ async def get_file(filename: str, x_api_key:str = Header(...)):
     return FileResponse(file_path)
 
 @app.post("/notification")
-async def post_notification(message:MessageSchema, x_api_key:str = Header(...)):
-    #curl   -H "Authorization: Bearer tk_3wow5z8vkbxj0q6obkqfhlvvhwx6c" -H "Tags:loudspeaker" \
-    #        -d "YOUR MESSAGE HERE" \
-    #        https://notifications.notlocalhost.dev/flash-channel-xtp
+async def post_notification(message:MessageSchema, x_api_key:str = Header(...)):    
     if (x_api_key != API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API key.")    
     url = NOTIFICATION_URL
