@@ -83,7 +83,7 @@ async def post_notification(request:Request, message:MessageSchema, x_api_key:st
             client.headers = {
                 "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
                 "Tags": "loudspeaker",                
-                "Attachment" : attachment_url
+                "Attach" : attachment_url
                 }        
         _ = await client.post(url+message.topic, data=message.message) #to the self-hosted ntfy server
     return  PlainTextResponse(status_code=200)  
