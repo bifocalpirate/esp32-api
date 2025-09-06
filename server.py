@@ -99,7 +99,9 @@ async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...))
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)        
-    return PlainTextResponse(encrypt_string(os.path.basename(new_name.name)),status_code=201) 
+    es = encrypt_string(os.path.basename(new_name.name))
+    logger.info(es)
+    return PlainTextResponse(es,status_code=201) 
 
 def decrypt_string(token: str) -> str:
     key_env = os.getenv("CRYPTO_KEY")
