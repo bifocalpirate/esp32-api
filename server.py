@@ -73,11 +73,13 @@ async def post_notification(request:Request, message:MessageSchema, x_api_key:st
     logger.info(f"Attachment URL: {attachment_url}")
     async with httpx.AsyncClient() as client:
         if not message.fn:
+            logger.info("Without attachment")
             client.headers = {
                 "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
                 "Tags": "loudspeaker"
             }
         else:
+            logger.info("With attachment")
             client.headers = {
                 "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
                 "Tags": "loudspeaker",                
