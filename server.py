@@ -66,5 +66,5 @@ async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...))
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    return PlainTextResponse(status_code=201) 
+    return JSONResponse(content={"f":new_name},status_code=201) 
 
