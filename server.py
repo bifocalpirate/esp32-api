@@ -56,7 +56,7 @@ async def get_file(filename: str, request:Request, x_api_key:str = Header(...)):
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
 
-@app.get("/get-file-by-encrypted-name/{filename}")
+@app.get("/get-file-by-encrypted-name/{filename}.jpg")
 async def get_file_by_encrypted_file_name(filename: str):  #decrypted filename, no api key needed as this is used in the notification service
     file_path = os.path.join(UPLOAD_DIR, decrypt_string(filename))    
     if not os.path.isfile(file_path):
@@ -69,7 +69,7 @@ async def post_notification(request:Request, message:MessageSchema, x_api_key:st
     if (x_api_key != API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API key.")        
     url = NOTIFICATION_URL        
-    attachment_url = f"{request.url.scheme}://{request.url.hostname}/{PROXY_TRIGGER}/get-file-by-encrypted-name/{message.fn}"
+    attachment_url = f"{request.url.scheme}://{request.url.hostname}/{PROXY_TRIGGER}/get-file-by-encrypted-name/{message.fn}.jpg"
     logger.info(f"Attachment URL: {attachment_url}")
     async with httpx.AsyncClient() as client:
         if not message.fn:
