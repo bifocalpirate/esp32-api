@@ -1,5 +1,7 @@
 import base64
+import logging
 import hashlib
+import sys
 from typing import Optional
 from fastapi import FastAPI, File, Request, UploadFile,HTTPException
 from fastapi.params import Header
@@ -27,6 +29,12 @@ NOTIFICATION_TOKEN = os.getenv("NOTIFICATION_TOKEN") #token for the ntfy service
 NOTIFICATION_URL = os.getenv("NOTIFICATION_URL") #base url for the ntfy service
 PROXY_TRIGGER = os.getenv("PROXY_TRIGGER") #the path used in the reverse proxy to trigger this service
 
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s %(name)s:- %(message)s",
+                    handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("fastapi_app.log")])
+
+logger = logging.getLogger("fastapi_app")
+
 class MessageSchema(BaseModel):
     message : str
     topic : str    
@@ -52,6 +60,7 @@ async def get_file(filename: str, request:Request, x_api_key:str = Header(...)):
 async def get_file_by_encrypted_file_name(filename: str):  #decrypted filename, no api key needed as this is used in the notification service
     file_path = os.path.join(UPLOAD_DIR, decrypt_string(filename))    
     if not os.path.isfile(file_path):
+        logger.info(f"File not found for decrypted filename: {filename}")
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
 
@@ -60,7 +69,8 @@ async def post_notification(request:Request, message:MessageSchema, x_api_key:st
     if (x_api_key != API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API key.")        
     url = NOTIFICATION_URL        
-                    
+    attachment_url = f"{request.url.scheme}://{request.url.hostname}/{PROXY_TRIGGER}/get-file-by-encrypted-name/{message.fn}"
+    logger.info(f"Attachment URL: {attachment_url}")
     async with httpx.AsyncClient() as client:
         if not message.fn:
             client.headers = {
@@ -71,7 +81,7 @@ async def post_notification(request:Request, message:MessageSchema, x_api_key:st
             client.headers = {
                 "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
                 "Tags": "loudspeaker",                
-                "Attachment" : f"{request.url.scheme}://{request.url.hostname}/{PROXY_TRIGGER}/get-file-by-encrypted-name/{message.fn}"
+                "Attachment" : attachment_url
                 }        
         _ = await client.post(url+message.topic, data=message.message) #to the self-hosted ntfy server
     return  PlainTextResponse(status_code=200)  
