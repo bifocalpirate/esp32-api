@@ -1,4 +1,5 @@
-from fastapi import FastAPI, File, UploadFile,HTTPException
+from typing import Optional
+from fastapi import FastAPI, File, Request, UploadFile,HTTPException
 from fastapi.params import Header
 from fastapi.responses import FileResponse, JSONResponse,PlainTextResponse
 import httpx
@@ -10,6 +11,9 @@ import os
 import time
 from pathlib import Path
 
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad,pad
+from base64 import b64decode, b64encode
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -19,10 +23,12 @@ app = FastAPI()
 API_KEY = os.getenv("API_KEY") #when more cameras are added use the mac address of the camera and a lookup db
 NOTIFICATION_TOKEN = os.getenv("NOTIFICATION_TOKEN") #token for the ntfy service
 NOTIFICATION_URL = os.getenv("NOTIFICATION_URL") #base url for the ntfy service
+PROXY_TRIGGER = os.getenv("PROXY_TRIGGER") #the path used in the reverse proxy to trigger this service
 
 class MessageSchema(BaseModel):
     message : str
     topic : str    
+    fn: Optional[str] = None
 
 @app.get("/list")
 async def list_images(x_api_key:str = Header(...)):
@@ -32,7 +38,7 @@ async def list_images(x_api_key:str = Header(...)):
     return JSONResponse(content={"files": files}, status_code=200)
 
 @app.get("/get-file/{filename}")
-async def get_file(filename: str, x_api_key:str = Header(...)):
+async def get_file(filename: str, request:Request, x_api_key:str = Header(...)):
     if (x_api_key != API_KEY):
         raise HTTPException(status_code=401, detail="Invalid API key.")    
     file_path = os.path.join(UPLOAD_DIR, filename)
@@ -40,16 +46,31 @@ async def get_file(filename: str, x_api_key:str = Header(...)):
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
 
+@app.get("/get-file-by-encrypted-name/{filename}")
+async def get_file_by_encrypted_file_name(filename: str):  #decrypted filename, no api key needed as this is used in the notification service
+    file_path = os.path.join(UPLOAD_DIR, decypt_string(filename))
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File not found.")
+    return FileResponse(file_path)
+
 @app.post("/notification")
-async def post_notification(message:MessageSchema, x_api_key:str = Header(...)):    
+async def post_notification(request:Request, message:MessageSchema, x_api_key:str = Header(...)):        
     if (x_api_key != API_KEY):
-        raise HTTPException(status_code=401, detail="Invalid API key.")    
-    url = NOTIFICATION_URL
+        raise HTTPException(status_code=401, detail="Invalid API key.")        
+    url = NOTIFICATION_URL        
+                    
     async with httpx.AsyncClient() as client:
-        client.headers = {
-            "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
-            "Tags": "loudspeaker"
-        }
+        if not message.fn:
+            client.headers = {
+                "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
+                "Tags": "loudspeaker"
+            }
+        else:
+            client.headers = {
+                "Authorization": f"Bearer {NOTIFICATION_TOKEN}",
+                "Tags": "loudspeaker",                
+                "Attachment" : f"{request.url.scheme}://{request.url.hostname}/{PROXY_TRIGGER}/get-file-by-encrypted-name/{message.fn}"
+                }        
         _ = await client.post(url+message.topic, data=message.message) #to the self-hosted ntfy server
     return  PlainTextResponse(status_code=200)  
 
@@ -66,5 +87,21 @@ async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...))
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)        
-    return PlainTextResponse(new_name.name,status_code=201) 
+    return PlainTextResponse(encrypt_string(new_name.name),status_code=201) 
+
+def decypt_string(encrypted_text: str) -> str:        
+    key = os.getenv("CRYPTO_KEY").encode('utf-8')
+    iv = b64decode(encrypted_text[:24])
+    ct = b64decode(encrypted_text[24:])
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    pt = unpad(cipher.decrypt(ct), AES.block_size)
+    return pt.decode('utf-8')
+
+def encrypt_string(plain_text: str) -> str:     
+    key = os.getenv("CRYPTO_KEY").encode('utf-8')
+    cipher = AES.new(key, AES.MODE_CBC)
+    ct_bytes = cipher.encrypt(pad(plain_text.encode('utf-8'), AES.block_size))
+    iv = b64encode(cipher.iv).decode('utf-8')
+    ct = b64encode(ct_bytes).decode('utf-8')
+    return iv + ct
 
