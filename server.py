@@ -1,3 +1,5 @@
+import base64
+import hashlib
 from typing import Optional
 from fastapi import FastAPI, File, Request, UploadFile,HTTPException
 from fastapi.params import Header
@@ -48,7 +50,7 @@ async def get_file(filename: str, request:Request, x_api_key:str = Header(...)):
 
 @app.get("/get-file-by-encrypted-name/{filename}")
 async def get_file_by_encrypted_file_name(filename: str):  #decrypted filename, no api key needed as this is used in the notification service
-    file_path = os.path.join(UPLOAD_DIR, decypt_string(filename))
+    file_path = os.path.join(UPLOAD_DIR, decrypt_string(filename))
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
@@ -89,19 +91,29 @@ async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...))
         shutil.copyfileobj(file.file, buffer)        
     return PlainTextResponse(encrypt_string(new_name.name),status_code=201) 
 
-def decypt_string(encrypted_text: str) -> str:        
-    key = os.getenv("CRYPTO_KEY").encode('utf-8')
-    iv = b64decode(encrypted_text[:24])
-    ct = b64decode(encrypted_text[24:])
+def decrypt_string(token: str) -> str:
+    key = os.getenv("CRYPTO_KEY").encode("utf-8")
+    if len(key) not in [16, 24, 32]:
+        key = hashlib.sha256(key).digest()
+    # Split the iv and ciphertext
+    iv_b64, ct_b64 = token.split(".")
+    # Function to restore base64 padding if stripped
+    def restore_padding(s: str) -> str:
+        return s + "=" * (-len(s) % 4)
+    iv = base64.urlsafe_b64decode(restore_padding(iv_b64))
+    ct = base64.urlsafe_b64decode(restore_padding(ct_b64))
     cipher = AES.new(key, AES.MODE_CBC, iv)
     pt = unpad(cipher.decrypt(ct), AES.block_size)
-    return pt.decode('utf-8')
+    return pt.decode("utf-8")
 
-def encrypt_string(plain_text: str) -> str:     
-    key = os.getenv("CRYPTO_KEY").encode('utf-8')
+def encrypt_string(plain_text: str) -> str:
+    key = os.getenv("CRYPTO_KEY").encode("utf-8")
+    if len(key) not in [16, 24, 32]:
+        key = hashlib.sha256(key).digest()
     cipher = AES.new(key, AES.MODE_CBC)
-    ct_bytes = cipher.encrypt(pad(plain_text.encode('utf-8'), AES.block_size))
-    iv = b64encode(cipher.iv).decode('utf-8')
-    ct = b64encode(ct_bytes).decode('utf-8')
-    return iv + ct
+    ct_bytes = cipher.encrypt(pad(plain_text.encode("utf-8"), AES.block_size))
+    iv = base64.urlsafe_b64encode(cipher.iv).decode("utf-8").rstrip("=")
+    ct = base64.urlsafe_b64encode(ct_bytes).decode("utf-8").rstrip("=")
+    # Concatenate with a delimiter safe for URL
+    return iv + "." + ct
 
