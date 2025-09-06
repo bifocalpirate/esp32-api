@@ -50,7 +50,7 @@ async def get_file(filename: str, request:Request, x_api_key:str = Header(...)):
 
 @app.get("/get-file-by-encrypted-name/{filename}")
 async def get_file_by_encrypted_file_name(filename: str):  #decrypted filename, no api key needed as this is used in the notification service
-    file_path = os.path.join(UPLOAD_DIR, decrypt_string(filename))
+    file_path = os.path.join(UPLOAD_DIR, decrypt_string(filename))    
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
@@ -85,35 +85,50 @@ async def upload_image(file:UploadFile = File(...), x_api_key:str = Header(...))
     
     old_path = Path(file.filename)
     new_name = old_path.with_name(f"{time.time() * 1000}{old_path.suffix}")
-    file_path = os.path.join(UPLOAD_DIR, new_name)
+    file_path = os.path.join(UPLOAD_DIR, new_name.name)
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)        
-    return PlainTextResponse(encrypt_string(new_name.name),status_code=201) 
+    return PlainTextResponse(encrypt_string(os.path.basename(new_name.name)),status_code=201) 
 
 def decrypt_string(token: str) -> str:
-    key = os.getenv("CRYPTO_KEY").encode("utf-8")
-    if len(key) not in [16, 24, 32]:
+    key_env = os.getenv("CRYPTO_KEY")
+    if not key_env:
+        raise ValueError("CRYPTO_KEY env var not set")
+
+    key = key_env.encode("utf-8")
+    if len(key) not in (16, 24, 32):
         key = hashlib.sha256(key).digest()
-    # Split the iv and ciphertext
-    iv_b64, ct_b64 = token.split(".")
-    # Function to restore base64 padding if stripped
-    def restore_padding(s: str) -> str:
-        return s + "=" * (-len(s) % 4)
-    iv = base64.urlsafe_b64decode(restore_padding(iv_b64))
-    ct = base64.urlsafe_b64decode(restore_padding(ct_b64))
-    cipher = AES.new(key, AES.MODE_CBC, iv)
-    pt = unpad(cipher.decrypt(ct), AES.block_size)
-    return pt.decode("utf-8")
+
+    # Restore padding and decode
+    try:
+        token_bytes = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
+    except Exception as e:
+        raise ValueError("Invalid token format") from e
+    if len(token_bytes) < 32:  # nonce (16) + tag (16) + min ciphertext (16)
+        raise ValueError("Invalid token length")
+
+    nonce = token_bytes[:16]   # GCM nonce is 16 bytes by default
+    tag   = token_bytes[16:32] # 16-byte auth tag
+    ct    = token_bytes[32:]
+    try:        
+        cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+        plaintext = cipher.decrypt_and_verify(ct, tag)
+    except ValueError as e:
+        raise ValueError("Decryption failed or data is tampered") from e    
+    return plaintext.decode("utf-8")
 
 def encrypt_string(plain_text: str) -> str:
-    key = os.getenv("CRYPTO_KEY").encode("utf-8")
-    if len(key) not in [16, 24, 32]:
-        key = hashlib.sha256(key).digest()
-    cipher = AES.new(key, AES.MODE_CBC)
-    ct_bytes = cipher.encrypt(pad(plain_text.encode("utf-8"), AES.block_size))
-    iv = base64.urlsafe_b64encode(cipher.iv).decode("utf-8").rstrip("=")
-    ct = base64.urlsafe_b64encode(ct_bytes).decode("utf-8").rstrip("=")
-    # Concatenate with a delimiter safe for URL
-    return iv + "." + ct
+    key_env = os.getenv("CRYPTO_KEY")
+    if not key_env:
+        raise ValueError("CRYPTO_KEY env var not set")
 
+    key = key_env.encode("utf-8")
+    if len(key) not in (16, 24, 32):
+        key = hashlib.sha256(key).digest()
+
+    cipher = AES.new(key, AES.MODE_GCM)
+    ciphertext, tag = cipher.encrypt_and_digest(plain_text.encode("utf-8"))
+    # Build token: nonce + tag + ciphertext
+    token = cipher.nonce + tag + ciphertext
+    return base64.urlsafe_b64encode(token).decode("utf-8").rstrip("=")
